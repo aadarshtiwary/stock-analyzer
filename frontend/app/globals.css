@@ -1,0 +1,114 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 7%;
+    --foreground: 220 15% 92%;
+    --card: 220 18% 10%;
+    --card-foreground: 220 15% 90%;
+    --border: 220 15% 16%;
+    --input: 220 18% 13%;
+    --primary: 162 72% 46%;
+    --primary-foreground: 220 20% 7%;
+    --muted: 220 15% 14%;
+    --muted-foreground: 220 12% 55%;
+    --accent: 220 15% 16%;
+
+    /* Verdict colors */
+    --buy: 162 72% 46%;
+    --watch: 38 92% 55%;
+    --avoid: 348 83% 60%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: "DM Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+  }
+
+  .metric-pass {
+    color: hsl(162 72% 46%);
+  }
+  .metric-fail {
+    color: hsl(348 83% 60%);
+  }
+
+  .verdict-buy {
+    --verdict-color: hsl(var(--buy));
+    color: hsl(var(--buy));
+  }
+  .verdict-watch {
+    --verdict-color: hsl(var(--watch));
+    color: hsl(var(--watch));
+  }
+  .verdict-avoid {
+    --verdict-color: hsl(var(--avoid));
+    color: hsl(var(--avoid));
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--card)) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  .glow-emerald {
+    box-shadow: 0 0 40px hsla(162, 72%, 46%, 0.12);
+  }
+  .glow-amber {
+    box-shadow: 0 0 40px hsla(38, 92%, 55%, 0.12);
+  }
+  .glow-rose {
+    box-shadow: 0 0 40px hsla(348, 83%, 60%, 0.12);
+  }
+}
+
+/* Clash Display fallback */
+.font-display {
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+/* Score ring animation */
+.score-ring-circle {
+  transition: stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
