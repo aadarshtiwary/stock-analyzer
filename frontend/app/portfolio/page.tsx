@@ -317,7 +317,7 @@ export default function PortfolioPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {result.holdings.map((h) => (
+                    {(result.holdings || []).map((h) => (
                       <tr
                         key={h.ticker}
                         className="hover:bg-muted/20 transition-colors cursor-pointer"

@@ -69,7 +69,7 @@ export function MetricsTable({ metricResults }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {metricResults.map((r, i) => (
+              {(metricResults || []).map((r, i) => (
                 <motion.tr
                   key={r.name}
                   initial={{ opacity: 0, x: -10 }}

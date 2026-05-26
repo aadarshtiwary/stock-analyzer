@@ -72,7 +72,7 @@ export function AIInsightPanel({ analysis, ticker }: Props) {
         {/* Strengths */}
         <Section icon={TrendingUp} title="Strengths" color="text-emerald-400">
           <ul className="space-y-2">
-            {analysis.strengths.map((s, i) => (
+            {(analysis.strengths || []).map((s, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0" />
                 {s}
@@ -84,7 +84,7 @@ export function AIInsightPanel({ analysis, ticker }: Props) {
         {/* Weaknesses */}
         <Section icon={AlertTriangle} title="Weaknesses" color="text-amber-400">
           <ul className="space-y-2">
-            {analysis.weaknesses.map((w, i) => (
+            {(analysis.weaknesses || []).map((w, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />
                 {w}
@@ -96,7 +96,7 @@ export function AIInsightPanel({ analysis, ticker }: Props) {
         {/* Risk Factors */}
         <Section icon={Shield} title="Risk Factors" color="text-rose-400">
           <ul className="space-y-2">
-            {analysis.risk_factors.map((r, i) => (
+            {(analysis.risk_factors || []).map((r, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 flex-shrink-0" />
                 {r}
