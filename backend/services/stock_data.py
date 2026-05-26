@@ -32,23 +32,43 @@ class StockDataService:
         return self._build_metrics(ticker, yf_data, technicals)
 
     def _fetch_yfinance(self, ticker: str) -> Dict[str, Any]:
-        """Fetch fundamental data from yfinance."""
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info or {}
+    """Fetch fundamental data from yfinance."""
+    try:
+        # Fix for cloud servers — set session headers to avoid blocks
+        import requests
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        })
 
-            # Historical price data
-            hist = stock.history(period="1y")
-            hist_6m = stock.history(period="6mo")
+        stock = yf.Ticker(ticker, session=session)
+        info = stock.info or {}
 
-            return {
-                "info": info,
-                "history": hist,
-                "history_6m": hist_6m,
-            }
-        except Exception as e:
-            logger.error(f"yfinance error for {ticker}: {e}")
-            return {"info": {}, "history": pd.DataFrame(), "history_6m": pd.DataFrame()}
+        # If info is empty or missing price, try fast_info
+        if not info.get("currentPrice") and not info.get("regularMarketPrice"):
+            try:
+                fast = stock.fast_info
+                if fast:
+                    info["currentPrice"] = getattr(fast, "last_price", None)
+                    info["previousClose"] = getattr(fast, "previous_close", None)
+                    info["marketCap"] = getattr(fast, "market_cap", None)
+            except Exception:
+                pass
+
+        # Historical price data
+        hist = stock.history(period="1y")
+        hist_6m = stock.history(period="6mo")
+
+        return {
+            "info": info,
+            "history": hist,
+            "history_6m": hist_6m,
+        }
+    except Exception as e:
+        logger.error(f"yfinance error for {ticker}: {e}")
+        return {"info": {}, "history": pd.DataFrame(), "history_6m": pd.DataFrame()}
 
     async def _fetch_technicals(
         self, ticker: str, history: Optional[pd.DataFrame]
