@@ -89,7 +89,7 @@ export function MetricsTable({ metricResults }: Props) {
                     {r.threshold}
                   </td>
                   <td className="py-3 text-right text-muted-foreground hidden md:table-cell font-mono text-xs">
-                    {r.passed ? r.score_contribution.toFixed(1) : "0"}/{r.max_score ?? r.score_contribution.toFixed(1)}
+                    {r.passed ? r.score_contribution.toFixed(1) : "0"}/{r.score_contribution.toFixed(1)}
                   </td>
                   <td className="py-3 text-right">
                     {r.display_value === "N/A" ? (
