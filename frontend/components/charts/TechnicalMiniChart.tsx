@@ -60,7 +60,7 @@ export function TechnicalMiniChart({ metrics }: Props) {
                       if (!active || !payload?.length) return null;
                       return (
                         <div className="text-xs bg-card border border-border px-2 py-1 rounded-lg">
-                          RSI: {payload[0]?.value?.toFixed(1)}
+                          RSI: {Number(payload[0]?.value).toFixed(1)}
                         </div>
                       );
                     }}
