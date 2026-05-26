@@ -6,8 +6,8 @@ import aiohttp
 import asyncio
 from datetime import datetime, timedelta
 import logging
+import requests
 
-from core.config import settings
 from models.schemas import StockMetrics
 
 logger = logging.getLogger(__name__)
@@ -16,58 +16,117 @@ logger = logging.getLogger(__name__)
 class StockDataService:
     """Fetches stock fundamentals, technicals, and metadata."""
 
-    def __init__(self):
-        self.av_key = settings.ALPHA_VANTAGE_API_KEY
-
     async def fetch_all(self, ticker: str) -> StockMetrics:
-        """Fetch all metrics for a ticker, combining multiple sources."""
-        # Run yfinance fetch in executor (it's sync)
+        """Fetch all metrics for a ticker."""
         loop = asyncio.get_event_loop()
         yf_data = await loop.run_in_executor(None, self._fetch_yfinance, ticker)
-
-        # Fetch technical indicators
         technicals = await self._fetch_technicals(ticker, yf_data.get("history"))
-
-        # Merge all data
         return self._build_metrics(ticker, yf_data, technicals)
 
-    def _fetch_yfinance(self, ticker: str) -> Dict[str, Any]:
-    """Fetch fundamental data from yfinance."""
-    try:
-        # Fix for cloud servers — set session headers to avoid blocks
-        import requests
+    def _get_session(self):
+        """Create a requests session that mimics a browser."""
         session = requests.Session()
         session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
         })
+        return session
 
-        stock = yf.Ticker(ticker, session=session)
-        info = stock.info or {}
-
-        # If info is empty or missing price, try fast_info
-        if not info.get("currentPrice") and not info.get("regularMarketPrice"):
+    def _fetch_yfinance(self, ticker: str) -> Dict[str, Any]:
+        """Fetch fundamental data from yfinance with multiple fallback methods."""
+        
+        # Method 1 — try with custom session
+        try:
+            session = self._get_session()
+            stock = yf.Ticker(ticker, session=session)
+            
+            # Try fast_info first (more reliable on cloud)
+            info = {}
             try:
                 fast = stock.fast_info
-                if fast:
-                    info["currentPrice"] = getattr(fast, "last_price", None)
-                    info["previousClose"] = getattr(fast, "previous_close", None)
-                    info["marketCap"] = getattr(fast, "market_cap", None)
+                info["currentPrice"] = getattr(fast, "last_price", None)
+                info["previousClose"] = getattr(fast, "previous_close", None)
+                info["marketCap"] = getattr(fast, "market_cap", None)
+                info["currency"] = getattr(fast, "currency", "INR")
+                info["exchange"] = getattr(fast, "exchange", None)
+                logger.info(f"fast_info price for {ticker}: {info.get('currentPrice')}")
+            except Exception as e:
+                logger.warning(f"fast_info failed for {ticker}: {e}")
+
+            # Try full info (sometimes blocked on cloud)
+            try:
+                full_info = stock.info or {}
+                # Merge — full_info overrides fast_info where available
+                for key, val in full_info.items():
+                    if val is not None and val != 0:
+                        info[key] = val
+            except Exception as e:
+                logger.warning(f"full info failed for {ticker}: {e}")
+
+            # Get history
+            hist = pd.DataFrame()
+            hist_6m = pd.DataFrame()
+            try:
+                hist = stock.history(period="1y", auto_adjust=True)
+                hist_6m = stock.history(period="6mo", auto_adjust=True)
+            except Exception as e:
+                logger.warning(f"history failed for {ticker}: {e}")
+
+            # If we at least have a price, return what we have
+            if info.get("currentPrice") or info.get("regularMarketPrice"):
+                return {"info": info, "history": hist, "history_6m": hist_6m}
+
+        except Exception as e:
+            logger.error(f"Method 1 failed for {ticker}: {e}")
+
+        # Method 2 — try without session
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info or {}
+            hist = stock.history(period="1y")
+            
+            if info.get("currentPrice") or info.get("regularMarketPrice"):
+                logger.info(f"Method 2 succeeded for {ticker}")
+                return {"info": info, "history": hist, "history_6m": pd.DataFrame()}
+        except Exception as e:
+            logger.error(f"Method 2 failed for {ticker}: {e}")
+
+        # Method 3 — try download instead of history
+        try:
+            session = self._get_session()
+            stock = yf.Ticker(ticker, session=session)
+            
+            df = yf.download(
+                ticker,
+                period="1y",
+                auto_adjust=True,
+                progress=False,
+                session=session,
+            )
+            
+            info = {}
+            try:
+                fast = stock.fast_info
+                info["currentPrice"] = getattr(fast, "last_price", None)
+                info["previousClose"] = getattr(fast, "previous_close", None)
+                info["marketCap"] = getattr(fast, "market_cap", None)
             except Exception:
-                pass
+                # Use last row of downloaded data as price
+                if not df.empty:
+                    info["currentPrice"] = float(df["Close"].iloc[-1])
+                    info["previousClose"] = float(df["Close"].iloc[-2]) if len(df) > 1 else None
 
-        # Historical price data
-        hist = stock.history(period="1y")
-        hist_6m = stock.history(period="6mo")
+            if info.get("currentPrice"):
+                logger.info(f"Method 3 (download) succeeded for {ticker}")
+                return {"info": info, "history": df, "history_6m": df}
 
-        return {
-            "info": info,
-            "history": hist,
-            "history_6m": hist_6m,
-        }
-    except Exception as e:
-        logger.error(f"yfinance error for {ticker}: {e}")
+        except Exception as e:
+            logger.error(f"Method 3 failed for {ticker}: {e}")
+
+        logger.error(f"All methods failed for {ticker}")
         return {"info": {}, "history": pd.DataFrame(), "history_6m": pd.DataFrame()}
 
     async def _fetch_technicals(
@@ -78,21 +137,20 @@ class StockDataService:
             return {}
 
         try:
+            # Handle multi-level columns from yf.download
+            if isinstance(history.columns, pd.MultiIndex):
+                history.columns = history.columns.get_level_values(0)
+
             close = history["Close"]
+            if close.empty:
+                return {}
 
-            # RSI (14-period)
             rsi = self._calculate_rsi(close, 14)
-
-            # MACD (12, 26, 9)
             macd_line, signal_line, histogram = self._calculate_macd(close)
-
-            # Moving averages
             dma_50 = close.rolling(window=50).mean().iloc[-1] if len(close) >= 50 else None
             dma_200 = close.rolling(window=200).mean().iloc[-1] if len(close) >= 200 else None
-
-            # Volume
-            avg_volume = history["Volume"].rolling(window=20).mean().iloc[-1]
-            current_volume = history["Volume"].iloc[-1]
+            avg_volume = history["Volume"].rolling(window=20).mean().iloc[-1] if "Volume" in history.columns else None
+            current_volume = history["Volume"].iloc[-1] if "Volume" in history.columns else None
 
             return {
                 "rsi": float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else None,
@@ -101,8 +159,8 @@ class StockDataService:
                 "macd_histogram": float(histogram.iloc[-1]) if not pd.isna(histogram.iloc[-1]) else None,
                 "dma_50": float(dma_50) if dma_50 and not pd.isna(dma_50) else None,
                 "dma_200": float(dma_200) if dma_200 and not pd.isna(dma_200) else None,
-                "current_volume": float(current_volume) if not pd.isna(current_volume) else None,
-                "avg_volume": float(avg_volume) if not pd.isna(avg_volume) else None,
+                "current_volume": float(current_volume) if current_volume and not pd.isna(current_volume) else None,
+                "avg_volume": float(avg_volume) if avg_volume and not pd.isna(avg_volume) else None,
             }
         except Exception as e:
             logger.error(f"Technical calculation error for {ticker}: {e}")
@@ -115,9 +173,7 @@ class StockDataService:
         rs = gain / loss.replace(0, np.nan)
         return 100 - (100 / (1 + rs))
 
-    def _calculate_macd(
-        self, close: pd.Series, fast=12, slow=26, signal=9
-    ):
+    def _calculate_macd(self, close: pd.Series, fast=12, slow=26, signal=9):
         ema_fast = close.ewm(span=fast, adjust=False).mean()
         ema_slow = close.ewm(span=slow, adjust=False).mean()
         macd_line = ema_fast - ema_slow
@@ -134,18 +190,15 @@ class StockDataService:
         info = yf_data.get("info", {})
         hist = yf_data.get("history", pd.DataFrame())
 
-        # Price data
         current_price = info.get("currentPrice") or info.get("regularMarketPrice")
         prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
         price_change_pct = None
         if current_price and prev_close and prev_close != 0:
             price_change_pct = ((current_price - prev_close) / prev_close) * 100
 
-        # Market cap
         market_cap = info.get("marketCap")
-        market_cap_cr = round(market_cap / 1e7, 2) if market_cap else None  # Convert to Crores
+        market_cap_cr = round(market_cap / 1e7, 2) if market_cap else None
 
-        # Revenue growth (YoY)
         revenue_growth = info.get("revenueGrowth")
         if revenue_growth:
             revenue_growth = revenue_growth * 100
@@ -154,41 +207,34 @@ class StockDataService:
         if earnings_growth:
             earnings_growth = earnings_growth * 100
 
-        # Profit growth
         profit_growth = info.get("earningsQuarterlyGrowth")
         if profit_growth:
             profit_growth = profit_growth * 100
 
-        # Volume ratio
         volume = technicals.get("current_volume")
         avg_volume = technicals.get("avg_volume")
         volume_ratio = (volume / avg_volume) if volume and avg_volume and avg_volume > 0 else None
 
         return StockMetrics(
-            # Price
             current_price=current_price,
             prev_close=prev_close,
             price_change_pct=round(price_change_pct, 2) if price_change_pct else None,
             market_cap=market_cap,
             market_cap_cr=market_cap_cr,
-            # Valuation
             pe_ratio=info.get("trailingPE") or info.get("forwardPE"),
             pb_ratio=info.get("priceToBook"),
-            sector_pe=None,  # Requires sector-level data
+            sector_pe=None,
             pe_vs_sector=None,
             ev_ebitda=info.get("enterpriseToEbitda"),
             dividend_yield=round(info.get("dividendYield", 0) * 100, 2) if info.get("dividendYield") else None,
-            # Quality
             roe=round(info.get("returnOnEquity", 0) * 100, 2) if info.get("returnOnEquity") else None,
-            roce=None,  # Not directly available from yfinance, estimated
+            roce=None,
             debt_to_equity=info.get("debtToEquity"),
             current_ratio=info.get("currentRatio"),
-            promoter_holding=None,  # NSE-specific, requires separate API
-            # Growth
+            promoter_holding=None,
             revenue_growth=round(revenue_growth, 2) if revenue_growth else None,
             profit_growth=round(profit_growth, 2) if profit_growth else None,
             earnings_growth_5y=round(earnings_growth, 2) if earnings_growth else None,
-            # Technical
             rsi=round(technicals.get("rsi"), 2) if technicals.get("rsi") else None,
             macd=round(technicals.get("macd"), 4) if technicals.get("macd") else None,
             macd_signal=round(technicals.get("macd_signal"), 4) if technicals.get("macd_signal") else None,
@@ -199,7 +245,6 @@ class StockDataService:
             avg_volume=avg_volume,
             volume_ratio=round(volume_ratio, 2) if volume_ratio else None,
             beta=info.get("beta"),
-            # Company Info
             company_name=info.get("longName") or info.get("shortName") or ticker,
             sector=info.get("sector"),
             industry=info.get("industry"),
