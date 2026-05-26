@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # Data Sources — yfinance is always free, others optional
     ALPHA_VANTAGE_API_KEY: str = ""
     FINNHUB_API_KEY: str = ""  # free tier: 60 calls/min
+    FMP_API_KEY: str = ""
 
     # Notifications — all optional
     SENDGRID_API_KEY: str = ""
